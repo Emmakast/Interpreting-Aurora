@@ -3,6 +3,7 @@ import torch
 import xarray as xr
 import pandas as pd
 import numpy as np
+import random
 from datetime import timedelta
 from aurora import AuroraSmallPretrained, Batch, Metadata
 import os
@@ -12,6 +13,14 @@ VAR_MAP = {
     "msl": "mean_sea_level_pressure", "t": "temperature", "u": "u_component_of_wind",
     "v": "v_component_of_wind", "q": "specific_humidity", "z": "geopotential",
 }
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    print(f"Random seed set to {seed}")
 
 def load_batch_from_zarr(zarr_path: str, static_path: str, date_str: str) -> Batch:
     ds = xr.open_zarr(zarr_path, consolidated=True)
@@ -60,8 +69,11 @@ def main():
     parser.add_argument("--date", required=True)
     parser.add_argument("--lrp-file", required=True)
     parser.add_argument("--output", type=str, default="results/prediction_impact.pt")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--n-random", type=int, default=10, help="Number of random runs per pct")
     args = parser.parse_args()
 
+    set_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     print("Loading Aurora...")
@@ -72,25 +84,17 @@ def main():
     print(f"Loading data for {args.date}...")
     raw_batch = load_batch_from_zarr(args.zarr_path, args.static_path, args.date)
     
-    # Handle missing stats
     surf_stats = model.surf_stats
     if not surf_stats:
-        print("WARNING: model.surf_stats is empty. Using approximate stats.")
-        surf_stats = {
-            "2t": (288.0, 15.0), 
-            "10u": (0.0, 6.0),   
-            "10v": (0.0, 6.0),   
-            "msl": (101325.0, 1500.0), 
-        }
+        surf_stats = {"2t": (288.0, 15.0), "10u": (0.0, 6.0), "10v": (0.0, 6.0), "msl": (101325.0, 1500.0)}
 
-    # Preprocess exactly like in training/LRP
     batch = model.batch_transform_hook(raw_batch)
     batch = batch.normalise(surf_stats=surf_stats).crop(model.patch_size)
     
     print(f"Loading LRP map {args.lrp_file}...")
     lrp_data = torch.load(args.lrp_file, map_location="cpu")
     
-    # Reconstruct Global Relevance
+    # 1. Global Relevance
     surf_keys = ["2t", "10u", "10v", "msl"]
     atmos_keys = ["t", "u", "v", "q", "z"]
     first_key = next(k for k in surf_keys if k in lrp_data)
@@ -102,33 +106,48 @@ def main():
             dims_to_sum = list(range(rel.ndim - 2)) 
             total_relevance += rel.sum(dim=dims_to_sum)
             
-    # --- SECTOR RESTRICTION (N. Atlantic) ---
-    print("Applying Sector Mask...")
-    # Lat 20N (280) to 80N (40)
-    # Lon -60E (1200) to 45E (180)
+    # 2. Sector Masks
     valid_lat_slice = slice(40, 280) 
-    sector_mask = torch.zeros_like(total_relevance)
-    sector_mask[valid_lat_slice, 0:180] = 1.0     
-    sector_mask[valid_lat_slice, 1200:1440] = 1.0 
-    total_relevance = total_relevance * sector_mask
-
-    flat_rel = total_relevance.flatten()
-    k_pixels = int(0.10 * flat_rel.numel())
-    threshold = torch.topk(flat_rel, k_pixels).values[-1]
+    sector_mask_binary = torch.zeros_like(total_relevance)
+    sector_mask_binary[valid_lat_slice, 0:180] = 1.0     
+    sector_mask_binary[valid_lat_slice, 1200:1440] = 1.0 
+    eval_mask = sector_mask_binary.to(device)
     
-    mask_top_k = (total_relevance >= threshold).float().to(device)
+    masked_relevance = total_relevance * sector_mask_binary
+    flat_rel = masked_relevance.flatten()
+    valid_indices = torch.nonzero(sector_mask_binary.flatten(), as_tuple=True)[0]
     
-    print(f"Masks created. Perturbing {k_pixels} pixels.")
+    # 3. Output Mask (Europe)
+    lats = batch.metadata.lat
+    lons = batch.metadata.lon
+    lat_grid = lats.unsqueeze(1).repeat(1, len(lons))
+    lon_grid = lons.unsqueeze(0).repeat(len(lats), 1)
+    europe_mask = (
+        (lat_grid <= 72) & (lat_grid >= 30) & 
+        ((lon_grid <= 45) | (lon_grid >= 348))
+    ).float().to(device)
 
-    # Helper to clean/perturb batches
+    # 4. Loop
+    percentages = [0.01, 0.05, 0.10]
+    
+    print(f"\n--- Running Perturbation Analysis (Random N={args.n_random}) ---")
+    print(f"{'Pct':<6} | {'LRP MSE':<12} | {'Rand Mean':<12} | {'Rand Std':<10} | {'Ratio':<6}")
+    print("-" * 65)
+
     def perturb_batch(b, mask_2d):
         p_surf = {}; p_atmos = {}
-        # Zero out input pixels
         for k, v in b.surf_vars.items(): p_surf[k] = v * (1 - mask_2d[None, None, :, :])
         for k, v in b.atmos_vars.items(): p_atmos[k] = v * (1 - mask_2d[None, None, None, :, :])
         return Batch(p_surf, b.static_vars, p_atmos, b.metadata)
 
-    # 1. Clean Prediction
+    def get_mse(pred_clean, pred_pert):
+        diff = (pred_clean.surf_vars['msl'] - pred_pert.surf_vars['msl'])
+        # Use europe_mask to evaluate impact on the target region (Europe)
+        diff = diff * europe_mask[None, None, :, :]
+        mse = (diff ** 2).sum() / europe_mask.sum()
+        return mse.item()
+
+    # Clean Pass
     clean_batch = Batch(
         surf_vars={k: v.to(device) for k, v in batch.surf_vars.items()},
         static_vars={k: v.squeeze(0).squeeze(0).to(device) for k, v in batch.static_vars.items()},
@@ -137,33 +156,66 @@ def main():
     )
     with torch.no_grad():
         pred_clean = model(clean_batch)
-        msl_raw = pred_clean.surf_vars['msl']
-        print(f"DEBUG: Raw MSL shape: {msl_raw.shape}")
-        print(f"DEBUG: Raw MSL stats: {msl_raw.min():.4f}, {msl_raw.max():.4f}")
+
+    results_to_save = {}
+
+
+    # Calculate total pixels IN THE SECTOR
+    sector_pixel_count = valid_indices.numel()
+    print(f"Total pixels in N. Atlantic Sector: {sector_pixel_count}")
+
+    for pct in percentages:
+        # Mask percentage relative to the SECTOR, not the globe
+        k_count = int(pct * sector_pixel_count)
         
-        # Skip denormalization for now as it produces huge values
-        # We will handle scaling in visualization
-        pred_clean.surf_vars['msl'] = msl_raw
-    
-    # 2. Perturbed Prediction (LRP)
-    batch_rel = perturb_batch(clean_batch, mask_top_k)
-    with torch.no_grad():
-        pred_pert = model(batch_rel)
-        # Skip denormalization
-    
-    # Extract MSL Pressure (Index -1 is the forecast step)
-    msl_clean = pred_clean.surf_vars['msl'].squeeze().cpu()
-    msl_pert = pred_pert.surf_vars['msl'].squeeze().cpu()
-    
-    # Save for visualization
-    print(f"Saving predictions to {args.output}...")
-    torch.save({
-        "msl_clean": msl_clean,
-        "msl_pert": msl_pert,
-        "mask_lrp": mask_top_k.cpu(),
-        "lats": batch.metadata.lat.cpu(),
-        "lons": batch.metadata.lon.cpu()
-    }, args.output)
+        print(f"Masking {k_count} pixels ({pct*100}%) ...")
+        
+        # ... rest of the loop is the same ...
+        
+        # A. LRP Pass (Deterministic)
+        threshold = torch.topk(flat_rel, k_count).values[-1]
+        mask_lrp = (masked_relevance >= threshold).float().to(device)
+        with torch.no_grad():
+            pred_lrp = model(perturb_batch(clean_batch, mask_lrp))
+        mse_lrp = get_mse(pred_clean, pred_lrp)
+        
+        # B. Random Loop
+        rand_mses = []
+        for i in range(args.n_random):
+            perm = torch.randperm(valid_indices.size(0))
+            idx_rand = valid_indices[perm[:k_count]]
+            mask_rand = torch.zeros_like(flat_rel)
+            mask_rand[idx_rand] = 1.0
+            mask_rand = mask_rand.reshape(total_relevance.shape).to(device)
+            
+            with torch.no_grad():
+                pred_rnd = model(perturb_batch(clean_batch, mask_rand))
+            rand_mses.append(get_mse(pred_clean, pred_rnd))
+            
+        avg_rand = np.mean(rand_mses)
+        std_rand = np.std(rand_mses)
+        ratio = mse_lrp / (avg_rand + 1e-8)
+        
+        print(f"{pct*100:>4.0f}%  | {mse_lrp:.4e}   | {avg_rand:.4e}   | {std_rand:.4e} | {ratio:.2f}x")
+        
+        # Save 10% data for plotting
+        if pct == 0.10:
+            # Re-generate last random mask just for saving structure if needed, 
+            # or just save LRP/Clean which is what we plot.
+            results_to_save = {
+                "msl_clean": pred_clean.surf_vars['msl'].squeeze().cpu(),
+                "msl_pert": pred_lrp.surf_vars['msl'].squeeze().cpu(),
+                "mask_lrp": mask_lrp.cpu(),
+                "lats": lats.cpu(),
+                "lons": lons.cpu(),
+                "ratio": ratio,
+                "mse_lrp": mse_lrp,
+                "mse_rnd_mean": avg_rand
+            }
+
+    print("-" * 65)
+    print(f"Saving 10% visualization data to {args.output}...")
+    torch.save(results_to_save, args.output)
     print("Done.")
 
 if __name__ == "__main__":
