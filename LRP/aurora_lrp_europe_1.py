@@ -288,8 +288,8 @@ def main():
         
         torch.autograd.backward(latents, relevance_target)
         
-        # User requested keeping input_tensor.grad (Sensitivity)
-        heatmap = input_tensor * input_tensor.grad  # This is RELEVANCE
+        # Zennit computes relevance in the .grad attribute
+        heatmap = input_tensor.grad  # This is RELEVANCE
         
         # Free graph memory immediately
         del latents, relevance_target, latents_spatial
