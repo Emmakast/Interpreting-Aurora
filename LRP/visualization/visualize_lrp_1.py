@@ -49,8 +49,8 @@ def plot_mega_grid(file_path, output_path=None, no_map=False, device="cpu", regi
 
     # 3. Setup Grid Layout (4 Rows, 5 Columns)
     # Row 0: Surface LRP
-    # Row 1: Surface Predictions  <-- MOVED UP
-    # Row 2: Atmos LRP            <-- MOVED DOWN
+    # Row 1: Surface Predictions
+    # Row 2: Atmos LRP
     # Row 3: Atmos Predictions
     fig = plt.figure(figsize=(20, 16))
     gs = gridspec.GridSpec(4, 5, figure=fig, height_ratios=[1, 1, 1, 1], wspace=0.1, hspace=0.3)
@@ -107,14 +107,12 @@ def plot_mega_grid(file_path, output_path=None, no_map=False, device="cpu", regi
         _plot_panel(ax, arr, data_extent, None, use_map, cmap=cmap, is_prediction=True)
         ax.set_title(title, fontsize=16)
 
-    # --- ROW 0: SURFACE LRP RELEVANCE ---
     print("Plotting Surface LRP...")
     plot_lrp_var("2t", 0, 0, "Surface T Relevance (2m)")
     plot_lrp_var("10u", 0, 1, "Surface U Relevance (10m)")
     plot_lrp_var("10v", 0, 2, "Surface V Relevance (10m)")
     plot_lrp_var("msl", 0, 4, "Surface Pressure Relevance (MSL)")
 
-    # --- ROW 1: SURFACE PREDICTIONS ---
     print("Plotting Surface Predictions...")
     
     # 1. Temp 2m
@@ -140,8 +138,6 @@ def plot_mega_grid(file_path, output_path=None, no_map=False, device="cpu", regi
     def to_hpa(x): return x / 100
     plot_pred_var("pred_msl", 1, 4, "MSL Pressure (hPa)", "cividis", func=to_hpa)
 
-
-    # --- ROW 2: ATMOS LRP RELEVANCE ---
     print("Plotting Atmos LRP...")
     plot_lrp_var("t", 2, 0, "Atmos T Relevance")
     plot_lrp_var("u", 2, 1, "Atmos U Relevance")
@@ -149,8 +145,6 @@ def plot_mega_grid(file_path, output_path=None, no_map=False, device="cpu", regi
     plot_lrp_var("q", 2, 3, "Atmos Q Relevance")
     plot_lrp_var("z", 2, 4, "Atmos Z Relevance")
 
-
-    # --- ROW 3: ATMOS PREDICTIONS ---
     print("Plotting Atmos Predictions...")
     
     # 1. Temp
@@ -189,8 +183,6 @@ def plot_mega_grid(file_path, output_path=None, no_map=False, device="cpu", regi
     print(f"Saving to {output_path}...")
     plt.savefig(output_path, bbox_inches='tight', dpi=150)
     print("Done.")
-
-# --- HELPER FUNCTIONS ---
 
 def _compute_extent(lat_tensor, lon_tensor, region):
     if lat_tensor is None or lon_tensor is None: return None, None, None, None
