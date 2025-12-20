@@ -71,7 +71,7 @@ def plot_levels(file_path, var_name, output_path=None, no_map=False, device="cpu
 
     # 3 Rows x 5 Cols = 15 slots. 
     # Slots 0-12: Atmos Levels. 
-    # Slot 13: Empty? 
+    # Slot 13: Empty
     # Slot 14 (Bottom Right): Surface.
     fig = plt.figure(figsize=(20, 12))
     gs = gridspec.GridSpec(3, 5, figure=fig, wspace=0.1, hspace=0.2)
@@ -104,8 +104,6 @@ def plot_levels(file_path, var_name, output_path=None, no_map=False, device="cpu
 
     # Plot Surface (if exists)
     if surf_tensor is not None:
-        # Put it in the last slot (Row 2, Col 4) or next available?
-        # Let's put it in the very last slot for visual separation
         ax = fig.add_subplot(gs[2, 4], **subplot_kw)
         
         heatmap = surf_tensor.cpu().numpy()
@@ -113,7 +111,6 @@ def plot_levels(file_path, var_name, output_path=None, no_map=False, device="cpu
         
         _plot_panel(ax, heatmap, data_extent, limit, use_map, f"SURFACE ({surf_key})")
         
-        # Add a visual separator (box) if you want, but grid usually suffices
 
     plt.suptitle(f"Vertical Structure: {var_name.upper()} (Levels 0-12) + Surface", fontsize=16, y=0.95)
     
@@ -123,8 +120,6 @@ def plot_levels(file_path, var_name, output_path=None, no_map=False, device="cpu
     print(f"Saving to {output_path}...")
     plt.savefig(output_path, bbox_inches='tight', dpi=150)
     print("Done.")
-
-# --- HELPER FUNCTIONS ---
 
 def _process_heatmap(heatmap, lon_reorder, lat_slice, lon_slice):
     if lon_reorder is not None: heatmap = heatmap[:, lon_reorder]
