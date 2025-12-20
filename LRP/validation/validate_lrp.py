@@ -170,8 +170,6 @@ def main():
         
         print(f"Masking {k_count} pixels ({pct*100}%) ...")
         
-        # ... rest of the loop is the same ...
-        
         # A. LRP Pass (Deterministic)
         threshold = torch.topk(flat_rel, k_count).values[-1]
         mask_lrp = (masked_relevance >= threshold).float().to(device)
@@ -200,8 +198,6 @@ def main():
         
         # Save 10% data for plotting
         if pct == 0.10:
-            # Re-generate last random mask just for saving structure if needed, 
-            # or just save LRP/Clean which is what we plot.
             results_to_save = {
                 "msl_clean": pred_clean.surf_vars['msl'].squeeze().cpu(),
                 "msl_pert": pred_lrp.surf_vars['msl'].squeeze().cpu(),
