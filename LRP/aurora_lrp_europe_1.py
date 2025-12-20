@@ -225,11 +225,10 @@ def main():
     torch.cuda.empty_cache()
     model = model.to(dtype=torch.float32)
 
-    # 3. Construct Mega Input Tensor
+    # 3. Construct Input Tensor
     surf_keys = ["2t", "10u", "10v", "msl"]
     atmos_keys = ["t", "u", "v", "q", "z"]
     
-    # <--- FIX: Compute patch_res BEFORE clearing surf_vars --->
     patch_res = compute_patch_resolution(model, batch_lrp)
 
     # Unsqueeze surface tensors to make them 5D
@@ -239,7 +238,6 @@ def main():
     input_tensor = torch.cat(surf_tensors + atmos_tensors, dim=2).requires_grad_(True)
     input_tensor.register_hook(nan_hook)
     
-    # <--- MEMORY OPTIMIZATION START (After compute_patch_resolution) --->
     # Delete the redundant data copies and clear batch_lrp
     del surf_tensors
     del atmos_tensors
@@ -250,7 +248,6 @@ def main():
     
     gc.collect()
     print("Redundant data deleted. Starting LRP...")
-    # <--- MEMORY OPTIMIZATION END --->
 
     wrapper = AuroraLatentWrapper(model, batch_lrp, patch_res)
     
@@ -289,7 +286,7 @@ def main():
         torch.autograd.backward(latents, relevance_target)
         
         # Zennit computes relevance in the .grad attribute
-        heatmap = input_tensor.grad  # This is RELEVANCE
+        heatmap = input_tensor.grad
         
         # Free graph memory immediately
         del latents, relevance_target, latents_spatial
