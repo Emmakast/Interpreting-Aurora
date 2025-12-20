@@ -9,7 +9,6 @@ import seaborn as sns
 from datetime import timedelta
 from aurora import AuroraSmallPretrained, Batch, Metadata
 
-# Reuse your existing settings
 VAR_MAP = {
     "2t": "2m_temperature", "10u": "10m_u_component_of_wind", "10v": "10m_v_component_of_wind",
     "msl": "mean_sea_level_pressure", "t": "temperature", "u": "u_component_of_wind",
@@ -17,7 +16,6 @@ VAR_MAP = {
 }
 
 def load_batch(zarr_path: str, static_path: str, date_str: str) -> Batch:
-    # Standard loading logic (same as before)
     ds = xr.open_zarr(zarr_path, consolidated=True)
     target_time = pd.to_datetime(f"{date_str}T06:00:00")
     request_times = [target_time - timedelta(hours=6), target_time]
@@ -140,7 +138,7 @@ def main():
     # Combine all seasons into one matrix
     X_all = torch.cat(list(data_store.values()), dim=0)
     
-    # Normalize (CRITICAL STEP)
+    # Normalize
     mean = X_all.mean(dim=0, keepdim=True)
     std = X_all.std(dim=0, keepdim=True) + 1e-6
     X_all_norm = (X_all - mean) / std
@@ -168,7 +166,7 @@ def main():
         # Project using GLOBAL Vh
         scores_tensor = X_norm @ Vh.T
         
-        # Store for saving (keep as CPU tensor)
+        # Store for saving
         saved_scores[name] = scores_tensor.cpu()
         
         # Convert to numpy for plotting
