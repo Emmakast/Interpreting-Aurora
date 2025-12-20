@@ -19,7 +19,6 @@ def main():
     parser.add_argument("--zarr-path", type=str, required=True)
     parser.add_argument("--year", type=int, default=2005)
     parser.add_argument("--count", type=int, default=30)
-    # Adjusted thresholds for Regional US data
     parser.add_argument("--storm-thresh", type=float, default=18.0) 
     parser.add_argument("--calm-thresh", type=float, default=12.0)
     args = parser.parse_args()
