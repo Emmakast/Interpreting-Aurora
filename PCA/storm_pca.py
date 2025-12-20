@@ -9,7 +9,6 @@ import seaborn as sns
 from datetime import timedelta
 from aurora import AuroraSmallPretrained, Batch, Metadata
 
-# --- SETTINGS ---
 VAR_MAP = {
     "2t": "2m_temperature", "10u": "10m_u_component_of_wind", "10v": "10m_v_component_of_wind",
     "msl": "mean_sea_level_pressure", "t": "temperature", "u": "u_component_of_wind",
@@ -17,26 +16,67 @@ VAR_MAP = {
 }
 
 def load_batch(zarr_path, static_path, date_str):
-    # Standard loading logic
+    # Load the dataset
     ds = xr.open_zarr(zarr_path, consolidated=True)
+
+    # Define the target time and request times
     target_time = pd.to_datetime(f"{date_str}T06:00:00")
     request_times = [target_time - timedelta(hours=6), target_time]
+
     try:
+        # Select and preprocess the time slice
         frame = ds.sel(time=request_times, method="nearest").load()
         frame = frame.sortby("time")
         frame = frame.isel(latitude=slice(0, 720), longitude=slice(0, 1440))
-        if frame.time.size < 2: return None
-    except Exception: return None
 
+        if frame.time.size < 2:
+            return None
+    except Exception:
+        return None
+
+    # Load and interpolate the static dataset
     static = xr.open_dataset(static_path, engine="netcdf4")
-    if "valid_time" in static.dims: static = static.isel(valid_time=0)
+
+    if "valid_time" in static.dims:
+        static = static.isel(valid_time=0)
+
     static = static.interp(latitude=frame.latitude, longitude=frame.longitude)
     static = static.transpose("latitude", "longitude")
 
-    surf = {k: torch.from_numpy(frame[VAR_MAP[k]].transpose("time", "latitude", "longitude").values).unsqueeze(0).float() for k in ["2t", "10u", "10v", "msl"]}
-    atmos = {k: torch.from_numpy(frame[VAR_MAP[k]].transpose("time", "level", "latitude", "longitude").values).unsqueeze(0).float() for k in ["t", "u", "v", "q", "z"]}
+    # Prepare surface variables
+    surf = {
+        k: torch.from_numpy(
+            frame[VAR_MAP[k]]
+            .transpose("time", "latitude", "longitude")
+            .values
+        ).unsqueeze(0).float()
+        for k in ["2t", "10u", "10v", "msl"]
+    }
 
-    return Batch(surf, {"z": torch.from_numpy(static["z"].values).float(), "slt": torch.from_numpy(static["slt"].values).float(), "lsm": torch.from_numpy(static["lsm"].values).float()}, atmos, Metadata(torch.from_numpy(frame.latitude.values), torch.from_numpy(frame.longitude.values), tuple(pd.to_datetime(frame.time.values).to_pydatetime()), tuple(int(l) for l in frame.level.values)))
+    # Prepare atmospheric variables
+    atmos = {
+        k: torch.from_numpy(
+            frame[VAR_MAP[k]]
+            .transpose("time", "level", "latitude", "longitude")
+            .values
+        ).unsqueeze(0).float()
+        for k in ["t", "u", "v", "q", "z"]
+    }
+
+    # Return the batch
+    return Batch(
+        surf,
+        {
+            "z": torch.from_numpy(static["z"].values).float(),
+            "slt": torch.from_numpy(static["slt"].values).float(),
+            "lsm": torch.from_numpy(static["lsm"].values).float(),
+        },
+        atmos,
+        Metadata(
+            lat=frame.latitude.values,
+            lon=frame.longitude.values
+        )
+    )
 
 def extract_latents(model, batch):
     activ = {}
