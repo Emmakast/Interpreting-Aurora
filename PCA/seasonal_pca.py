@@ -24,18 +24,45 @@ def load_batch(zarr_path: str, static_path: str, date_str: str) -> Batch:
         frame = ds.sel(time=request_times, method="nearest").load()
         frame = frame.sortby("time")
         frame = frame.isel(latitude=slice(0, 720), longitude=slice(0, 1440))
-        if frame.time.size < 2: return None
-    except Exception: return None
+        if frame.time.size < 2:
+            return None
+    except Exception:
+        return None
 
     static = xr.open_dataset(static_path, engine="netcdf4")
-    if "valid_time" in static.dims: static = static.isel(valid_time=0)
+    if "valid_time" in static.dims:
+        static = static.isel(valid_time=0)
     static = static.interp(latitude=frame.latitude, longitude=frame.longitude)
     static = static.transpose("latitude", "longitude")
 
-    surf = {k: torch.from_numpy(frame[VAR_MAP[k]].transpose("time", "latitude", "longitude").values).unsqueeze(0).float() for k in ["2t", "10u", "10v", "msl"]}
-    atmos = {k: torch.from_numpy(frame[VAR_MAP[k]].transpose("time", "level", "latitude", "longitude").values).unsqueeze(0).float() for k in ["t", "u", "v", "q", "z"]}
+    surf = {
+        k: torch.from_numpy(
+            frame[VAR_MAP[k]].transpose("time", "latitude", "longitude").values
+        ).unsqueeze(0).float()
+        for k in ["2t", "10u", "10v", "msl"]
+    }
+    atmos = {
+        k: torch.from_numpy(
+            frame[VAR_MAP[k]].transpose("time", "level", "latitude", "longitude").values
+        ).unsqueeze(0).float()
+        for k in ["t", "u", "v", "q", "z"]
+    }
 
-    return Batch(surf, {"z": torch.from_numpy(static["z"].values).float(), "slt": torch.from_numpy(static["slt"].values).float(), "lsm": torch.from_numpy(static["lsm"].values).float()}, atmos, Metadata(torch.from_numpy(frame.latitude.values), torch.from_numpy(frame.longitude.values), tuple(pd.to_datetime(frame.time.values).to_pydatetime()), tuple(int(l) for l in frame.level.values)))
+    return Batch(
+        surf,
+        {
+            "z": torch.from_numpy(static["z"].values).float(),
+            "slt": torch.from_numpy(static["slt"].values).float(),
+            "lsm": torch.from_numpy(static["lsm"].values).float(),
+        },
+        atmos,
+        Metadata(
+            lat=frame.latitude.values,
+            lon=frame.longitude.values,
+            time=frame.time.values,
+            lead_time=np.array([6], dtype=np.int64),
+        ),
+    )
 
 def extract_latents(model, batch):
     activ = {}
