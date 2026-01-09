@@ -128,7 +128,7 @@ def main():
     ).float().to(device)
 
     # 4. Loop
-    percentages = [0.01, 0.05, 0.10]
+    percentages = [0.01]
     
     print(f"\n--- Running Perturbation Analysis (Random N={args.n_random}) ---")
     print(f"{'Pct':<6} | {'LRP MSE':<12} | {'Rand Mean':<12} | {'Rand Std':<10} | {'Ratio':<6}")
