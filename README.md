@@ -199,7 +199,3 @@ python validation_lrp.py \
 - [Aurora Model Documentation](https://github.com/microsoft/aurora)
 - [ERA5 Reanalysis Dataset](https://cds.climate.copernicus.eu/)
 
----
-
-## 👩‍💻 Author
-Emma Kast
