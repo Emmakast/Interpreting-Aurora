@@ -135,8 +135,6 @@ def plot_surface_grid(file_path, output_path=None, no_map=False, device="cpu", r
     # Extract date from filename for title
     basename = os.path.basename(file_path)
     date_str = basename.replace("lrp_europe_", "").replace(".pt", "")
-    # No main title - cleaner for paper
-    # plt.suptitle(...)
     
     if output_path is None:
         output_path = file_path.replace(".pt", "_surface_grid.pdf")
