@@ -116,8 +116,6 @@ def plot_levels_grid(file_path, var_name, output_path=None, no_map=False, device
     basename = os.path.basename(file_path)
     date_str = basename.replace("lrp_europe_", "").replace(".pt", "")
     
-    # No main title - cleaner for paper
-    # plt.suptitle(...)
     
     if output_path is None:
         output_path = file_path.replace(".pt", f"_levels_{var_name}_grid.pdf")
