@@ -1,6 +1,6 @@
-# Opening the Black Box of AI Weather Forecasting: Latent Space Dynamics and Attribution in the Aurora Model
+# Does Aurora Encode Atmospheric Structure? Latent Regime Analysis and Attribution
 
-This repository contains the code and methodology for the study **"Opening the Black Box of AI Weather Forecasting: Latent Space Dynamics and Attribution in the Aurora Model"**. This project investigates the internal latent representations of the Aurora AI weather model using:
+This repository contains the code and methodology for the study **"Does Aurora Encode Atmospheric Structure? Latent Regime Analysis and Attribution"**. This project investigates the internal latent representations of the Aurora AI weather model using:
 - **Principal Component Analysis (PCA)** to disentangle physical regimes (e.g., Storm vs. Calm, Seasonal Cycles), and
 - **Layer-wise Relevance Propagation (LRP)** to attribute specific predictions to input features.
 
